@@ -1,0 +1,16 @@
+# environment
+.venv/
+__pycache__/
+*.pyc
+
+# build output (report.pdf and proposal.pdf are committed at the repo root)
+out/*.pdf
+out/*.log
+out/*.aux
+out/_cache.pkl
+
+# rendered previews
+*.png
+
+# the input data is not mine to redistribute
+embeddings.npz

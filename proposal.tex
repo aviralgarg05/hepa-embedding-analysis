@@ -1,0 +1,127 @@
+\documentclass[9pt]{extarticle}
+\usepackage[margin=0.55in,top=0.5in,bottom=0.4in]{geometry}
+\usepackage{graphicx,amsmath,amssymb,xcolor,enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\setlist[itemize]{leftmargin=0.95em,topsep=1pt,itemsep=0.8pt,parsep=0pt}
+\setlength{\parindent}{0pt}
+\usepackage{titlesec}
+\titleformat{\section}{\bfseries\small}{}{0em}{}
+\titlespacing*{\section}{0pt}{4.5pt}{2pt}
+\definecolor{acc}{HTML}{2d6a9f}
+\newcommand{\hl}[1]{\textcolor{acc}{\textbf{#1}}}
+\newcommand{\B}[1]{\textbf{#1}}
+\pagestyle{empty}
+
+\begin{document}
+
+{\large\bfseries Making HEPA's bound empirical:}\\[1pt]
+{\large\bfseries an \emph{a priori} test for whether HEPA will work on a new dataset}\\[2pt]
+{\footnotesize Aviral Garg \;$\cdot$\; Forgis research proposal \;$\cdot$\; 10 October 2026 \;$\cdot$\;
+on HEPA (Petersen et al., arXiv:2605.11130v4)}
+\vspace{2pt}\hrule\vspace{3pt}
+
+\section{The gap I want to close, stated by the paper itself}
+
+HEPA's Proposition 1 gives $I(H_t;E_{t+\Delta t}) \ge I(H^*;E_{t+\Delta t}) - C_\eta L^2 \varepsilon$,
+with vacuity threshold (their eq.~17) $\;\varepsilon_{\text{vac}} = I(H^*;E_{t+\Delta t})/(C_\eta L^2)$.
+
+\begin{itemize}
+\item \B{Within a dataset the bound is validated:} varying $\varepsilon$ via pretraining snapshots gives Spearman
+      $\rho = -0.87$ (C-MAPSS-1), $-0.67$ (C-MAPSS-3), $-0.64$ (MBA), $-0.49$ (SMAP).
+\item \B{Across datasets it falls apart.} Pooling converged $\varepsilon$ over the 14 benchmarks gives Pearson
+      \hl{$r = -0.05$ ($p=0.90$)}. The paper attributes this to $L$, $C_\eta$ and target scale differing by dataset.
+\item \B{The constants are never estimated.} In the authors' words: \emph{``The constants $L$ and $C_\eta$ are not
+      estimated directly; fig.~3 validates only the monotonic relationship, not the full quantitative bound,''}
+      and in Future Work: \emph{``deriving fully empirical versions of the information-retention bound that
+      estimate $L$ and $C_\eta$ directly from data remains an interesting open problem.''}
+\end{itemize}
+
+\hl{As it stands the bound only explains HEPA's failures after the fact.} I want to make it predictive.
+Define the \B{dimensionless slack}
+\[
+\hat\rho(\mathcal{D}) \;=\; \frac{\hat\varepsilon}{\hat\varepsilon_{\text{vac}}}
+\;=\; \frac{\hat\varepsilon \cdot \hat C_\eta \hat L^2}{\hat I(H^*;E)} ,
+\qquad\text{bound non-vacuous}\iff \hat\rho < 1 .
+\]
+
+\section{Hypotheses}
+
+\begin{itemize}
+\item \hl{H1 (normalisation restores the cross-dataset signal).} Across the 14 benchmarks,
+      $\rho_s(\hat\rho,\ \text{h-AUROC}) \le -0.6$, where raw $\varepsilon$ gives $r=-0.05$.
+      \emph{Falsified if $|\rho_s| < 0.3$}, which would mean the incommensurability comes from somewhere else
+      and my normalisation is wrong.
+\item \hl{H2 (it works as a screen).} $\hat\rho \ge 1$ identifies the no-guarantee regime using
+      \B{no downstream result}: CHB-MIT (h-AUROC 0.497, chance) and GECCO (within-dataset $\rho=+0.14$, $p=0.67$)
+      satisfy $\hat\rho \ge 1$; C-MAPSS-1 (0.806) satisfies $\hat\rho \ll 1$.
+      \emph{Falsified if either control is misclassified.}
+\item \hl{H3 (the L1/L2 mismatch is measurable).} Assumption A2 is stated in L2,
+      $\mathbb{E}\|\hat H - H^*\|_2^2 \le \varepsilon$, while HEPA's eq.~(2) minimises L1. So the bound is about a
+      quantity the training doesn't optimise. Prediction: $\hat\rho$ from the L2 residual rank-correlates with
+      h-AUROC better than $\hat\rho$ from the L1 residual, by $\Delta\rho_s \ge 0.15$.
+      \emph{Falsified if the two sit within noise of each other}, which would still be useful: it would license
+      the L1 loss.
+\end{itemize}
+
+\section{Estimators, all cheap and low-dimensional where it matters}
+
+Fit HEPA's own linear hazard head $\hat\eta(h)=\sigma(w^\top h + b)$ (513 params) on the \emph{frozen} target
+representations $h^*$. Then, on held-out data:
+\begin{itemize}
+\item $\hat L = Q_{0.99}\big\{\,|\hat\eta(h_i)-\hat\eta(h_j)| \,/\, \|h_i-h_j\|_2 \;:\; (i,j)\in k\text{NN}\,\big\}$,
+      using a high quantile rather than a supremum so the estimate stays stable at finite sample size.
+\item $\hat C_\eta = \big(2\,\underline{\eta}\,(1-\overline{\eta})\big)^{-1}$ with $\underline{\eta},\overline{\eta}$
+      the 1st/99th percentiles of $\hat\eta(h^*)$.
+\item $\hat I(H^*;E) = H(\pi_e) - \mathbb{E}\big[H(\hat\eta(H^*))\big]$, plug-in. $E$ is binary, so this is a
+      \B{1-D} estimate. No high-dimensional MI estimator is needed, which is usually where this kind of proposal
+      dies.
+\item $\hat\varepsilon = \mathbb{E}\|\hat h - h^*\|_2^2$ on a held-out split, per H3 also in L1.
+\end{itemize}
+
+\section{Why it is worth doing, and what it costs}
+
+\begin{itemize}
+\item \B{Scientific:} it turns HEPA's central theorem into something you can compute and falsify, and it answers
+      the open problem the paper names itself.
+\item \B{Industrial:} $\hat\rho$ needs unlabelled pretraining and a small labelled probe, so Forgis can tell a
+      customer \B{before} committing whether HEPA will work on their plant. That's the deployment question.
+\item \B{Cost:} released checkpoints and HEPA's own recipe. The paper reports pretraining at under a minute per
+      dataset on one A10G, and the new compute is $O(N)$ estimators plus one $k$NN pass.
+      \B{This fits well inside the ICML timeline.}
+\end{itemize}
+
+\section{Risks I can already name}
+
+\begin{itemize}
+\item Plug-in MI is biased. \emph{Mitigation:} report rank correlation (invariant to monotone bias) with bootstrap
+      CIs, never absolute slack.
+\item $\hat L$ is a tail statistic and will be noisy. \emph{Mitigation:} report the full sensitivity curve across
+      the quantile rather than a single value.
+\item $n=14$ datasets is low power. \emph{Mitigation:} pre-register the predicted direction and the exact test
+      before computing any h-AUROC correlation, and show the per-dataset scatter alongside the coefficient.
+\end{itemize}
+
+\section{Secondary direction (from my analysis of \texttt{embeddings.npz})}
+
+In the attached report I found that with a \B{frozen} target, no SIGReg weight $\alpha\in[0.01,0.9]$ buys both
+prediction quality and representation rank (at HEPA's own $\alpha{=}0.1$: cosine
+$0.8715{\pm}0.0003 \to 0.066{\pm}0.007$, 5 seeds).
+HEPA escapes this only because both encoders train jointly, which lets the target migrate toward the isotropic
+Gaussian SIGReg demands.
+\hl{So SIGReg is doing two jobs at once: it prevents collapse, and it sets the target's distribution.}
+
+\begin{itemize}
+\item \B{H4.} Split the two jobs: SIGReg on the target branch, and an explicit rank floor on the predictor
+      output. This removes the sensitivity to $\alpha$ and helps where channel-fusion tokenisation currently costs
+      HEPA accuracy (the paper names BATADAL and MBA as having \emph{``sensor-localised events where channel-fusion
+      tokenisation dilutes the relevant subset''}). Measurable mediator: predictor-output effective rank.
+\end{itemize}
+
+\vspace{2pt}
+{\footnotesize\emph{Open question for our call:} the paper reports $\alpha{=}0.1$ (table 7), while
+\texttt{Forgis-Labs/HEPA} PR \#3 states the table-1 runs used $0.04$. I've worked from 0.1 throughout, since
+that's what the paper says. Which should a reimplementation use?}
+
+\end{document}
