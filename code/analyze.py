@@ -104,19 +104,24 @@ def sigreg(Z, n_dir=1024, n_quad=17, seed=0, mode="raw", chunk=128):
     full departure from N(0, I_d) -- LeJEPA notes SIGReg "will enforce in
     expectation that E[Z]=0 and Cov(Z)=I_d". We therefore report it at three
     levels to separate the sources of that departure:
-      mode="raw"      : as the loss sees it (global scale + anisotropy + shape)
-      mode="global"   : after one global rescale to unit mean projection
-                        variance   (anisotropy + shape)
-      mode="perproj"  : after standardising every projection (shape only)
+      mode="raw"      : algorithm 1 verbatim, nothing removed. This is exactly what
+                        the training term in sigreg_torch() sees: mean offset +
+                        scale + anisotropy + shape.
+      mode="centred"  : mean removed (isolates how much came from the mean offset)
+      mode="global"   : mean removed, then one global rescale to unit mean
+                        projection variance   (anisotropy + shape)
+      mode="perproj"  : mean removed, then every projection standardised (shape only)
+    Only mode="raw" is the regulariser. The other three are diagnostics built from
+    it, and are labelled as such wherever they are reported.
     """
     g = np.random.default_rng(seed)
     A = g.standard_normal((Z.shape[1], n_dir)); A /= np.linalg.norm(A, axis=0, keepdims=True)
-    P = (Z - Z.mean(0)) @ A
+    P = Z @ A if mode == "raw" else (Z - Z.mean(0)) @ A
     if mode == "global":
         P = P / np.sqrt(P.var(0).mean())
     elif mode == "perproj":
         P = P / (P.std(0) + 1e-12)
-    elif mode != "raw":
+    elif mode not in ("raw", "centred"):
         raise ValueError(mode)
     t = np.linspace(-5, 5, n_quad)
     phi = np.exp(-0.5 * t ** 2)                     # CF of N(0,1) == window
@@ -144,14 +149,20 @@ def ridge_fit(X, Y, lam):
     A = X.T @ X + lam * np.eye(X.shape[1])
     return np.linalg.solve(A, X.T @ Y)
 
-def retrieval(Q, K, labels=None):
-    """Instance R@1/R@5 and (optional) class-match@1 of query rows against key rows."""
-    S = nz(Q) @ nz(K).T
+def retrieval(Q, G, gt=None, yq=None, yg=None):
+    """
+    Retrieval of queries Q against gallery G.
+      gt[i] = row of G that is the true match for Q[i]   (defaults to i)
+      yq, yg = class labels of queries and gallery, for class-match@1
+    R@1 is not comparable across gallery sizes, so the caller records the pool.
+    """
+    if gt is None:
+        gt = np.arange(len(Q))
+    S = nz(Q) @ nz(G).T
     order = np.argsort(-S, axis=1)
-    n = len(Q); tgt = np.arange(n)
-    r1 = float((order[:, 0] == tgt).mean())
-    r5 = float(np.mean([tgt[i] in order[i, :5] for i in range(n)]))
-    cls = float((labels[order[:, 0]] == labels).mean()) if labels is not None else None
+    r1 = float((order[:, 0] == gt).mean())
+    r5 = float(np.mean([gt[i] in order[i, :5] for i in range(len(Q))]))
+    cls = float((yg[order[:, 0]] == yq).mean()) if yq is not None else None
     return r1, r5, cls
 
 def procrustes(A, B):
@@ -169,6 +180,19 @@ def knn_acc(Zn, Y, k=1):
         v, c = np.unique(Y[nb[i]], return_counts=True)
         out.append(v[c.argmax()] == Y[i])
     return float(np.mean(out))
+
+def knn_acc_split(Zn, Y, tr, te, k=1):
+    """1-NN with the gallery restricted to the training rows."""
+    S = Zn[te] @ Zn[tr].T
+    nb = np.argsort(-S, axis=1)[:, :k]
+    if k == 1:
+        return float((Y[tr][nb[:, 0]] == Y[te]).mean())
+    out = []
+    for i in range(len(te)):
+        v, c = np.unique(Y[tr][nb[i]], return_counts=True)
+        out.append(v[c.argmax()] == Y[te][i])
+    return float(np.mean(out))
+
 
 def linear_probe(X, Y, tr, te, lam=1.0):
     classes = np.unique(Y); cmap = {c: j for j, c in enumerate(classes)}
@@ -247,13 +271,14 @@ def isotropy(T, I):
     G = rng.standard_normal((len(T), T.shape[1])).astype(np.float32)
     variants = {"T": T, "I": I, "N(0,I)": G, "T whitened": whiten(T), "I whitened": whiten(I)}
     sg, ku = {}, {}
-    print(f"    {'':12s} {'raw':>10s} {'global-scaled':>14s} {'shape-only':>11s}   kurtosis")
+    print(f"    {'':12s} {'raw':>10s} {'centred':>10s} {'glob-scaled':>12s} {'shape':>8s}   kurtosis")
     for nm, X in variants.items():
-        sg[nm] = {m: sigreg(X, mode=m) for m in ("raw", "global", "perproj")}
+        sg[nm] = {m: sigreg(X, mode=m) for m in ("raw", "centred", "global", "perproj")}
         skew, k4 = proj_moments(X)
         ku[nm] = (float(k4.mean()), float(k4.std()), float(np.abs(skew).mean()))
-        print(f"    {nm:12s} {sg[nm]['raw']:10.3f} {sg[nm]['global']:14.3f} "
-              f"{sg[nm]['perproj']:11.3f}   {ku[nm][0]:.3f}+-{ku[nm][1]:.3f} (Gauss 3)")
+        print(f"    {nm:12s} {sg[nm]['raw']:10.3f} {sg[nm]['centred']:10.3f} "
+              f"{sg[nm]['global']:12.3f} {sg[nm]['perproj']:8.3f}   "
+              f"{ku[nm][0]:.3f}+-{ku[nm][1]:.3f} (Gauss 3)")
     rec("sigreg", sg); rec("proj_kurtosis", ku)
     _, k4T = proj_moments(T); _, k4I = proj_moments(I); _, k4G = proj_moments(G)
     rec("_kurt_hist", {"T": k4T.tolist(), "I": k4I.tolist(), "G": k4G.tolist()})
@@ -265,8 +290,14 @@ def isotropy(T, I):
 
 
 # ================================================================ 3. modality gap
-def modality_gap(T, I, Y):
-    print("\n[3] MODALITY GAP")
+def modality_gap(T, I, Y, tr, te):
+    """
+    Every map here (centring, Procrustes, ridge) is fitted on the 2000 training
+    rows only. Retrieval is queried with the 500 held-out rows against the full
+    2500-row gallery, so chance R@1 stays 1/2500 and the aligned numbers remain
+    comparable to the un-aligned baselines.
+    """
+    print("\n[3] MODALITY GAP  (maps fitted on train, queried from held-out)")
     Tn, In = nz(T), nz(I)
     rec("paired_cos", float((Tn * In).sum(1).mean()))
     rec("random_cos", float((Tn * In[rng.permutation(len(T))]).sum(1).mean()))
@@ -282,17 +313,24 @@ def modality_gap(T, I, Y):
           f"random={R['random_cos']:.4f}")
     print(f"    cos(mean T, mean I)={R['gap_mean_cos']:.4f}  ||mean diff||={R['gap_mean_distance']:.4f}")
 
+    # every map fitted on TRAIN only
+    muT, muI = Tn[tr].mean(0), In[tr].mean(0)
+    Tc, Ic = nz(Tn - muT), nz(In - muI)
+    Rm, sv = procrustes(Ic[tr], Tc[tr])
+    W = ridge_fit(Ic[tr], Tc[tr], 1.0)
+
+    # queried from HELD-OUT rows against the full gallery
     stages = {}
-    stages["raw cosine"] = retrieval(In, Tn, Y)
-    Tc, Ic = nz(Tn - Tn.mean(0)), nz(In - In.mean(0))
-    stages["mean-centred"] = retrieval(Ic, Tc, Y)
-    Rm, sv = procrustes(Ic, Tc)
-    stages["+ Procrustes"] = retrieval(Ic @ Rm, Tc, Y)
-    W = ridge_fit(Ic, Tc, 1.0)
-    stages["+ ridge map"] = retrieval(Ic @ W, Tc, Y)
+    stages["raw cosine"]   = retrieval(In[te], Tn, te, Y[te], Y)
+    stages["mean-centred"] = retrieval(Ic[te], Tc, te, Y[te], Y)
+    stages["+ Procrustes"] = retrieval(Ic[te] @ Rm, Tc, te, Y[te], Y)
+    stages["+ ridge map"]  = retrieval(Ic[te] @ W, Tc, te, Y[te], Y)
     rec("retrieval_stages", {k: {"R@1": v[0], "R@5": v[1], "class@1": v[2]} for k, v in stages.items()})
+    rec("retrieval_protocol", {"n_queries": int(len(te)), "gallery": int(len(T)),
+                               "fitted_on": int(len(tr)), "chance_R1": 1.0 / len(T)})
     for k, v in stages.items():
         print(f"    I->T  {k:14s} R@1={v[0]:.4f}  R@5={v[1]:.4f}  class@1={v[2]:.4f}")
+    print(f"    protocol: {len(te)} held-out queries, {len(T)}-row gallery, maps fitted on {len(tr)} rows")
     # how close to orthogonal is the optimal *unconstrained* linear map?
     sW = np.linalg.svd(W, compute_uv=False)
     rec("procrustes_corr_spectrum", sv[:20].tolist())
@@ -311,7 +349,7 @@ def modality_gap(T, I, Y):
 # ============================================================== 4. ridge predictor
 def ridge_predictor(T, I):
     print("\n[4] LINEAR PREDICTOR  T->I  (cosine vs rank)")
-    N = len(T); idx = rng.permutation(N); tr, te = idx[:2000], idx[2000:]
+    tr = np.array(R["_split_tr"]); te = np.array(R["_split_te"])
     lams = [1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1000.0]
     rows = []
     tgt_rank = var_entropy_rank(I[te])
@@ -333,7 +371,6 @@ def ridge_predictor(T, I):
                          "R@1": retrieval(P, T[te])[0],
                          "rank": var_entropy_rank(P),
                          "target_rank": var_entropy_rank(T[te])})
-    rec("_split_tr", tr.tolist()); rec("_split_te", te.tolist())
 
 
 # ======================================================== 5. JEPA predictor + SIGReg
@@ -404,41 +441,54 @@ def jepa_predictor(T, I, alphas=(0.0, 0.01, 0.05, 0.1, 0.3, 0.6, 0.9), epochs=20
 
 
 # ======================================================================= 6. probes
-def probes(T, I, Y):
-    print("\n[6] PROBES")
-    tr = np.array(R["_split_tr"]); te = np.array(R["_split_te"])
+def probes(T, I, Y, tr, te):
+    """Every probe fitted on the 2000 training rows and scored on the 500 held out."""
+    print("\n[6] PROBES  (fitted on train, scored on held-out)")
     lin, knn = {}, {}
     for nm, X in (("T", T), ("I", I), ("T+I", np.hstack([T, I]))):
         lin[nm] = linear_probe(X, Y, tr, te)
-        knn[nm] = knn_acc(nz(X), Y, k=1)
+        knn[nm] = knn_acc_split(nz(X), Y, tr, te, k=1)
         print(f"    {nm:4s} linear={lin[nm]:.4f}  1-NN={knn[nm]:.4f}")
     rec("linear_probe", lin); rec("knn_probe", knn)
-    # zero-shot: class-mean T prototype classifies I
+    # zero-shot: class prototypes from TRAIN text rows, scored on HELD-OUT images
     Tn, In = nz(T), nz(I)
     cls = np.unique(Y)
-    proto = nz(np.stack([Tn[Y == c].mean(0) for c in cls]))
-    rec("zeroshot_acc", float((cls[(In @ proto.T).argmax(1)] == Y).mean()))
-    # same, after Procrustes alignment
-    Tc, Ic = nz(Tn - Tn.mean(0)), nz(In - In.mean(0))
-    Rm, _ = procrustes(Ic, Tc)
-    proto_c = nz(np.stack([Tc[Y == c].mean(0) for c in cls]))
-    rec("zeroshot_acc_procrustes", float((cls[(nz(Ic @ Rm) @ proto_c.T).argmax(1)] == Y).mean()))
+    proto = nz(np.stack([Tn[tr][Y[tr] == c].mean(0) for c in cls]))
+    rec("zeroshot_acc", float((cls[(In[te] @ proto.T).argmax(1)] == Y[te]).mean()))
+    # same, after a Procrustes rotation also fitted on train
+    muT, muI = Tn[tr].mean(0), In[tr].mean(0)
+    Tc, Ic = nz(Tn - muT), nz(In - muI)
+    Rm, _ = procrustes(Ic[tr], Tc[tr])
+    proto_c = nz(np.stack([Tc[tr][Y[tr] == c].mean(0) for c in cls]))
+    rec("zeroshot_acc_procrustes", float((cls[(nz(Ic[te] @ Rm) @ proto_c.T).argmax(1)] == Y[te]).mean()))
     rec("chance_acc", float(1 / len(cls)))
-    print(f"    zero-shot (T class prototype -> I): {R['zeroshot_acc']:.4f}  "
+    print(f"    zero-shot (train T prototypes -> held-out I): {R['zeroshot_acc']:.4f}  "
           f"after Procrustes: {R['zeroshot_acc_procrustes']:.4f}  chance={R['chance_acc']:.4f}")
 
 
 # ====================================================== 7. is this a HEPA dump?
+def _lag1():
+    """R["I_lag_cos"] is keyed by int in a fresh run and by str after a JSON round-trip."""
+    d = R["I_lag_cos"]
+    return d[1] if 1 in d else d["1"]
+
+
 def hepa_check(T, I):
     print("\n[7] IS THIS A HEPA-STYLE (h_t, h*) DUMP?  -- three falsification tests")
     tests = {
-        "dim matches HEPA d=256": {"observed": int(T.shape[1]), "expected": 256, "pass": T.shape[1] == 256},
-        "row order temporal": {"observed": round(R["I_lag_cos"][1], 4),
-                               "expected": f"> random ({R['I_random_cos']:.4f})",
-                               "pass": R["I_lag_cos"][1] > R["I_random_cos"] + 0.02},
-        "SIGReg-trained (near-isotropic)": {"observed": round(R["sigreg"]["I"]["global"], 3),
-                                            "expected": f"~ N(0,I) ({R['sigreg']['N(0,I)']['global']:.3f})",
-                                            "pass": R["sigreg"]["I"]["global"] < 3 * R["sigreg"]["N(0,I)"]["global"]},
+        "dim matches HEPA d=256": {
+            "observed": int(T.shape[1]), "expected": 256, "pass": T.shape[1] == 256},
+        "row order temporal": {
+            "observed": round(_lag1(), 4),
+            "expected": f"> random ({R['I_random_cos']:.4f})",
+            "pass": _lag1() > R["I_random_cos"] + 0.02},
+        "L2-normalised onto the unit sphere": {
+            # HEPA trains "L1 on L2-normalised" representations (their table 7, appendix A.2),
+            # so a genuine (h_t, h*) dump would have unit norms. This discriminates; a SIGReg
+            # distance test does not, because SIGReg constrains only the predictor output.
+            "observed": f"||T||={R['T_norm_mean']:.2f}, ||I||={R['I_norm_mean']:.2f}",
+            "expected": "1.00",
+            "pass": abs(R["T_norm_mean"] - 1) < 0.05 and abs(R["I_norm_mean"] - 1) < 0.05},
     }
     rec("hepa_checks", tests)
     for k, v in tests.items():
@@ -479,17 +529,18 @@ def figures(T, I, Y, figdir):
     fig, ax = plt.subplots(1, 2, figsize=(6.8, 2.05), layout="constrained")
     sg = R["sigreg"]; names = [r"$\mathcal{N}(0,I)$", "I whitened", "I", "T", "T whitened"]
     keyn = ["N(0,I)", "I whitened", "I", "T", "T whitened"]
-    modes = [("raw", "raw: scale+aniso+shape", "#3f3f3f"),
-             ("global", "global-scaled: aniso+shape", CI),
-             ("perproj", "shape only", CT)]
-    yy = np.arange(len(names)); h = .26
+    modes = [("raw", "raw (= the regulariser)", "#3f3f3f"),
+             ("centred", "mean removed", "#8a6d3b"),
+             ("global", "+ global rescale", CI),
+             ("perproj", "+ per-projection std (shape)", CT)]
+    yy = np.arange(len(names)); h = .20
     for j, (m, lab, c) in enumerate(modes):
-        ax[0].barh(yy + (j - 1) * h, [sg[n][m] for n in keyn], h, color=c, label=lab)
+        ax[0].barh(yy + (j - 1.5) * h, [sg[n][m] for n in keyn], h, color=c, label=lab)
     ax[0].set_yticks(yy); ax[0].set_yticklabels(names); ax[0].set_xscale("log")
-    ax[0].set_xlim(.2, 1e4)
+    ax[0].set_xlim(.2, 4e4)
     ax[0].set_xlabel(r"SIGReg distance to $\mathcal{N}(0,I)$  (lower = closer)")
     ax[0].set_title("(a) HEPA's regulariser, read-only")
-    ax[0].legend(loc="lower right", fontsize=5.8, **LC)
+    ax[0].legend(loc="lower right", fontsize=5.0, **LC)
 
     kh = R["_kurt_hist"]; bins = np.linspace(2.2, 5.0, 44)
     for k, c, l in (("G", CG, r"$\mathcal{N}(0,I)$"), ("I", CI, "I"), ("T", CT, "T")):
@@ -518,7 +569,7 @@ def figures(T, I, Y, figdir):
         ax[1].text(i + .2, st[k]["class@1"] * 100 + 2, f"{st[k]['class@1']*100:.0f}", ha="center", fontsize=5.4)
     ax[1].set_xticks(xx); ax[1].set_xticklabels(sh, fontsize=5.8)
     ax[1].set_ylabel(r"I$\to$T retrieval (%)"); ax[1].set_ylim(0, 116)
-    ax[1].set_title("(b) The gap is largely a rotation")
+    ax[1].set_title("(b) Class structure transfers, instances don't")
     ax[1].legend(loc="upper left", fontsize=5.8, **LC)
 
     nms = ["T", "I", "T+I"]; x3 = np.arange(3)
@@ -623,13 +674,19 @@ def main():
         figures(T, I, Y, a.figs)
         return
 
+    # one 80/20 split, created once up front and used by every fitted map
+    idx = np.random.default_rng(SEED).permutation(len(T))
+    tr, te = idx[:2000], idx[2000:]
+    rec("_split_tr", tr.tolist()); rec("_split_te", te.tolist())
+    rec("split", {"train": int(len(tr)), "test": int(len(te)), "seed": SEED})
+
     forensics(T, I, Y)
     geometry(T, I)
     isotropy(T, I)
-    modality_gap(T, I, Y)
+    modality_gap(T, I, Y, tr, te)
     ridge_predictor(T, I)
     jepa_predictor(T, I)
-    probes(T, I, Y)
+    probes(T, I, Y, tr, te)
     hepa_check(T, I)
     pickle.dump(R, open(cache, "wb"))
     figures(T, I, Y, a.figs)

@@ -45,20 +45,35 @@ test (encoding known image/caption pairs with ViT-B/32) needs the source data, w
 
 It is **not** a HEPA representation dump. Three falsification tests, all of them negative (`report.pdf` §1).
 
+## Protocol
+
+One 80/20 split at seed 0. Every fitted object in report §4 and §5 — the centring, the Procrustes rotation,
+the ridge map, the class prototypes, the probes, the MLP — is fitted on the 2000 training rows and scored on
+the 500 held out. Retrieval queries the 500 held-out rows against the full 2500-row gallery, so chance R@1
+stays 1/2500. Report §2 and §3 are descriptive statistics of all 2500 rows and need no split.
+
 ## Headline findings
 
-1. **The modality gap is largely a rotation.** One orthogonal Procrustes map lifts I→T instance R@1 from
-   1.6% to 17.6%, class match from 55.7% to 88.2%, and zero-shot accuracy from 68.9% to 90.1%.
-2. **Cosine hides the collapse.** A ridge predictor's cosine to the target *rises* 0.851 → 0.880 while its
-   prediction rank *falls* 36.9 → 14.0 against a target rank of 60.3. They move in opposite directions across
-   the whole useful range of λ.
-3. **On a frozen target, SIGReg fights the prediction term.** At HEPA's own α=0.1 the cosine drops from
-   0.8715 ± 0.0003 to 0.066 ± 0.007 (5 seeds). HEPA avoids this only because it trains both encoders jointly,
-   which lets the target migrate toward the isotropic Gaussian SIGReg demands. That's where the proposal starts.
+1. **The modality gap is a rotation for class structure, not for instances.** One orthogonal Procrustes map
+   lifts held-out I→T class match from 55.4% to 84.6% and zero-shot from 68.4% to 89.0%, but instance R@1 only
+   from 1.6% to 3.2% (80× chance). That split is the finding: the row pairing is class-level to begin with.
+2. **Cosine improves while nothing downstream does.** A ridge predictor's cosine *rises* 0.848 → 0.882 while
+   its prediction rank *falls* 37.0 → 14.2 against a target rank of 58.9 — and held-out retrieval stays flat
+   at ~8% R@1 across that whole range. Cosine buys nothing; rank tracks the collapse but not the task.
+3. **On a frozen target, SIGReg fights the prediction term.** HEPA's target is never frozen — their appendix
+   I.3 shows the method is robust to an EMA target too, and picks joint training "for its simplicity" — so
+   this is a regime HEPA has not tested, not a contradiction of it. That gap is where the proposal starts.
 
-## A correction worth flagging
+## Two corrections worth flagging
 
-My first SIGReg implementation standardised each random projection before the Epps–Pulley statistic.
+**The §4 numbers were in-sample in an earlier version.** The Procrustes map, the ridge map and the class
+prototypes were fitted on all 2500 rows and then evaluated on the same 2500 rows. A 512×512 orthogonal map has
+~131k free parameters against 2500 pairs, and the inflation was about 5× at instance level: the headline read
+"1.6% → 17.6%" where the held-out number is 1.6% → 3.2%. The class-level result survived (88.2% in-sample vs
+84.6% held-out), which is why the finding stands but in a narrower form.
+
+**My first SIGReg implementation was not SIGReg.** It standardised each random projection before the
+Epps–Pulley statistic.
 That silently removes the scale and covariance information, which is exactly the part that makes SIGReg
 prevent collapse (LeJEPA, [arXiv:2511.08544](https://arxiv.org/abs/2511.08544), algorithm 1 does *not*
 standardise; §5 of that paper: "SIGReg will enforce in expectation that E[Z]=0 and Cov(Z)=I_d"). With the
