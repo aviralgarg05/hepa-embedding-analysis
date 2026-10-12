@@ -101,11 +101,11 @@ tested for that. Three checks, all of them negative:
 \section{The modality gap is a rotation for class structure, not for instances}
 \includegraphics{figs/fig3_gap.pdf}
 \begin{itemize}
-\item \emph{Protocol:} centring, rotation and ridge map are fitted on the \B{2000 training rows}; retrieval is
-      queried with the \B{500 held-out rows} against the full 2500-row gallery, chance R@1 0.04\%. The cloud
-      statistics and panel (a) are descriptive over all 2500 rows, nothing fitted.
-      \emph{An earlier version fitted and scored on all 2500 rows: $1.6\%\!\to\!17.6\%$ at instance level against
-      the $3.2\%$ below, class match 88.2\% vs 84.6\%. The finding survives, narrowed.}
+\item \emph{Protocol:} centring, rotation and ridge map are fitted on the \B{2000 training rows} and queried
+      with the \B{500 held-out rows} against the full 2500-row gallery, chance R@1 0.04\%. The cloud statistics
+      and panel (a) describe all 2500 rows and fit nothing.
+      \emph{Why it matters:} scoring in-sample instead gives $17.6\%$ and 88.2\% against the $3.2\%$ and 84.6\%
+      below, \hl{so it inflates the instance number about $5\times$ and barely moves the class number.}
 \item Disjoint clouds: $\cos(\overline{\texttt{T}},\overline{\texttt{I}})=0.319$,
       $\|\overline{\texttt{T}}-\overline{\texttt{I}}\|=0.97$ (normalised); PC1 alone separates them.
 \item Raw cosine barely sees the pairing: paired 0.2781, same-class 0.2715, random 0.2215. The 0.007 margin
@@ -138,8 +138,7 @@ tested for that. Three checks, all of them negative:
       $2.6\times$ rank collapse.
 \item \hl{But rank does not predict the downstream number either.} Over that same range held-out retrieval is
       \B{flat} (R@1 8.0, 7.8, 7.8, 8.2, 8.4, 7.8\%), falling to 4.2\% only at $\lambda{=}10^3$.
-      \emph{Scored against the 500-row held-out gallery, so chance is 0.2\% and these are not comparable with
-      \S4's 2500-row numbers.} So cosine
+      \emph{Scored against the 500-row gallery, chance 0.2\%, so not comparable with \S4's.} So cosine
       improves monotonically while buying nothing downstream, and rank tracks the collapse but not the task.
       \B{Report all three.}
 \item \B{SIGReg on the predictor does not fix it here.} 2-layer MLP under HEPA eq.~(2),
@@ -147,9 +146,9 @@ tested for that. Three checks, all of them negative:
       cosine $0.8716{\pm}0.0004$ / rank $30.0{\pm}0.1$; at HEPA's own $\alpha{=}0.1$, cosine \hl{$0.0609{\pm}0.0044$} / rank $11.9{\pm}0.2$.
       Every $\alpha\ge0.01$ destroys prediction, with seed spread far below the effect.
 \item \B{A scale mismatch is involved, but it is not what separates me from HEPA.} SIGReg wants unit
-      per-projection variance; my frozen target sits at 0.070, about $14\times$ off. HEPA's representations are
-      on the unit sphere (appendix E): at $d{=}256$ that gives $1/256=0.0039$, about $256\times$ off, so it is
-      \hl{further from SIGReg's target than mine}. Normalising is not the difference.
+      per-projection variance; my frozen target sits at 0.070 ($14\times$ off), while HEPA's unit-sphere
+      representations (appendix E) give $1/256=0.0039$ at $d{=}256$, \hl{$256\times$ off and so further from
+      SIGReg's target than mine}. Normalising is not the difference.
       \B{Control:} against a train-whitened target (projection variance 1.00 on the fitting rows, 1.38 held-out,
       against 0.07 raw) the mismatch is largely gone and prediction \emph{still} collapses (cosine
       $0.109{\pm}0.000$$\to$$0.048{\pm}0.003$ at $\alpha{=}0.01$; rank $129{\pm}1$$\to$$11.4{\pm}0.6$).
@@ -165,13 +164,13 @@ tested for that. Three checks, all of them negative:
 
 \section{Caveats}
 \begin{itemize}
-\item \B{One 80/20 split throughout, seed 0.} Every fitted object in \S4 and \S5 (centring, rotation, ridge
-      map, prototypes, probes, the whitening transform, the MLP) is fitted on the 2000 training rows and scored
-      on the 500 held out. I don't resample it, so the split is an untested source of variance. MLP results are
-      5 seeds; the ridge sweep is exact. \S2--\S3 describe all 2500 rows and fit nothing.
-\item The CLIP identification is unconfirmed (test named in \S1), and the $\alpha$ sweep is one architecture at
-      one budget (2-layer MLP, 200 epochs) on unnormalised targets: I'd stand behind the \emph{direction}, not
-      the crossover point, and I have not run HEPA itself.
+\item \B{One 80/20 split throughout, seed 0.} Every fitted object in \S4 and \S5 (centring, rotation, ridge map,
+      prototypes, probes, whitening, the MLP) is fitted on the 2000 training rows and scored on the 500 held
+      out; I don't resample it, so the split is an untested source of variance. MLP results are 5 seeds, the
+      ridge sweep exact, and \S2--\S3 describe all 2500 rows and fit nothing.
+\item The CLIP identification is unconfirmed (test named in \S1). The $\alpha$ sweep is one architecture at one
+      budget on unnormalised targets, so I'd stand behind the \emph{direction}, not the crossover point, and I
+      have not run HEPA itself.
 \end{itemize}
 
 \end{document}
