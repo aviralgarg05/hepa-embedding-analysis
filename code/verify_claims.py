@@ -18,7 +18,8 @@ def ck(label, claimed, actual, tol=0.05, pct=False):
     global checks
     checks += 1
     a = actual * 100 if pct else actual
-    ok = abs(a - claimed) <= max(tol, abs(claimed) * 0.01)
+    # tol=0 means exact: the 1%-of-claim floor must not silently widen it
+    ok = (a == claimed) if tol == 0 else abs(a - claimed) <= max(tol, abs(claimed) * 0.01)
     print(f"  [{'OK ' if ok else 'FAIL'}] {label:<58} report={claimed:<10} data={a:.4f}")
     if not ok:
         fails.append(label)
@@ -146,10 +147,10 @@ for lbl, key, met, mean, sd in [
     ("MLP raw, a=0,    rank",   "raw|0.0",       "rank", 30.0,   0.1),
     ("MLP raw, a=0.1,  cosine", "raw|0.1",       "cos",  0.0609, 0.0044),
     ("MLP raw, a=0.1,  rank",   "raw|0.1",       "rank", 11.9,   0.2),
-    ("MLP whit., a=0,  cosine", "whitened|0.0",  "cos",  0.0985, 0.0004),
-    ("MLP whit., a=0,  rank",   "whitened|0.0",  "rank", 128.0,  0.7),
-    ("MLP whit., a=.01 cosine", "whitened|0.01", "cos",  0.0455, 0.0034),
-    ("MLP whit., a=.01 rank",   "whitened|0.01", "rank", 11.5,   0.7),
+    ("MLP whit., a=0,  cosine", "whitened|0.0",  "cos",  0.1091, 0.0003),
+    ("MLP whit., a=0,  rank",   "whitened|0.0",  "rank", 128.9,  0.7),
+    ("MLP whit., a=.01 cosine", "whitened|0.01", "cos",  0.0475, 0.0025),
+    ("MLP whit., a=.01 rank",   "whitened|0.01", "rank", 11.4,   0.6),
 ]:
     ckr(f"{lbl} mean", mean, MS[key][met]["mean"])
     ckr(f"{lbl} s.d.", sd, MS[key][met]["std"])
@@ -157,7 +158,26 @@ ck("every alpha>=0.01 destroys prediction (raw target)", 1,
    int(all(MS[f"raw|{a}"]["cos"]["mean"] < 0.25 for a in (0.01, 0.05, 0.1, 0.3, 0.6, 0.9))), 0)
 ck("seed spread is far below the effect", 1,
    int(MS["raw|0.1"]["cos"]["std"] * 10 < MS["raw|0.0"]["cos"]["mean"] - MS["raw|0.1"]["cos"]["mean"]), 0)
-ck("whitened target proj. variance", 1.000, 1.0004, 0.001)
+# computed from the data, not a literal: the whitened target must have unit
+# per-projection variance, which is what makes it the right control for the scale mismatch
+_Iw = __import__("numpy").load(__import__("os").path.expanduser("~/Downloads/embeddings.npz"))["I"] \
+    if __import__("os").path.exists(__import__("os").path.expanduser("~/Downloads/embeddings.npz")) else None
+if _Iw is not None:
+    import numpy as _np
+    _tr = _np.random.default_rng(0).permutation(len(_Iw))[:2000]
+    _mu = _Iw[_tr].mean(0); _C = _np.cov(_Iw[_tr] - _mu, rowvar=False)
+    _ev, _V = _np.linalg.eigh(_C)
+    _W = _V @ _np.diag(1/_np.sqrt(_np.maximum(_ev, 1e-8))) @ _V.T
+    _Z = (_Iw - _mu) @ _W
+    _te = _np.random.default_rng(0).permutation(len(_Iw))[2000:]
+    ck("whitened target proj. var, fitting rows", 1.00,
+       float(_np.trace(_np.cov(_Z[_tr], rowvar=False)) / _Z.shape[1]), 0.01)
+    ck("whitened target proj. var, held-out", 1.38,
+       float(_np.trace(_np.cov(_Z[_te], rowvar=False)) / _Z.shape[1]), 0.01)
+    ck("raw target proj. var", 0.07,
+       float(_np.trace(_np.cov(_Iw, rowvar=False)) / _Iw.shape[1]), 0.005)
+else:
+    print("  [SKIP] whitened target proj. variance (embeddings.npz not present)")
 
 print("\n== §1 the three HEPA-dump falsification tests ==")
 hc = R["hepa_checks"]
@@ -188,7 +208,7 @@ for c in [
     "appendix I.3: joint vs EMA, 6/12 win, 'for its simplicity'  -> sec I.3",
     "appendix A.2: L1 is a 'monotone proxy' for epsilon          -> sec A.2",
     "appendix A.4: a vacuous bound does NOT imply I(H_t;E)=0     -> sec A.4",
-    "GECCO h-AUROC = 0.88 (HEPA's best in table 1)               -> table 1",
+    "GECCO h-AUROC = 0.88, second to Weather 0.89               -> table 1",
     "event head = LayerNorm + linear = 769 params                -> appendix C",
     "trains 'L1 on L2-normalised' representations                -> table 7 / appendix A.2",
     "SIGReg algorithm 1: projections NOT standardised           -> arXiv:2511.08544 alg. 1",

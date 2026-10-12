@@ -37,23 +37,22 @@ about 4 minutes on CPU). Raw values are in \texttt{out/results.json}.}
 \item \B{Two different encoders:} per-dim variance correlation \hl{0.0017}, mean per-dim correlation 0.18, and
       only 4 of 512 dims reach $|r|>0.5$. They share no basis.
 \item \B{\texttt{T}'s inputs repeat exactly, \texttt{I}'s never do:} \texttt{T} 2075/2500 unique (173 duplicate
-      groups, max multiplicity 30), \texttt{I} 2500/2500. \hl{98.8\% of duplicate groups sit inside one class.}
-      Note 83\% of \texttt{T} rows are still unique, so this is a pool with class-confined repeats rather than
-      one string per class.
+      groups, max multiplicity 30), \texttt{I} 2500/2500, and \hl{98.8\% of duplicate groups sit inside one
+      class}. 83\% of \texttt{T} rows are still unique, so this is a pool with class-confined repeats.
 \item \B{Row order carries nothing:} $\cos(\texttt{I}_i,\texttt{I}_{i+1})=0.6579$ against $0.6581$ for a random
       pair, and the same at lags 2, 5, 10 and 50. \texttt{Y} has 2416 runs in 2500 rows.
 \end{itemize}
 
 \B{Hypothesis: a CLIP-style dual encoder, with \texttt{T}=text, \texttt{I}=image and \texttt{Y}=class.}
 \begin{itemize}
-\item \emph{For:} $D{=}512$ is CLIP ViT-B/32's shared width for both towers; the vectors are unnormalised,
-      as a dump taken before the $\ell_2$ layer would be; two towers explain the disjoint bases; repeated
-      captions explain \texttt{T}'s duplicates; and the mean-offset (\S4) matches CLIP's documented gap.
-\item \emph{Against / open:} paired similarity barely exceeds same-class similarity (\S4), so the row pairing is
-      \emph{class}-level; and 34 classes on their own weren't enough for me to pin down the source dataset.
-      \hl{I'm putting this forward as a hypothesis with its evidence, and nothing stronger.}
+\item \emph{For:} $D{=}512$ is CLIP ViT-B/32's shared width for both towers; the vectors are unnormalised, as a
+      pre-$\ell_2$ dump would be; two towers explain the disjoint bases; repeated captions explain \texttt{T}'s
+      duplicates; the mean-offset (\S4) matches CLIP's documented gap.
+\item \emph{Against / open:} paired similarity barely exceeds same-class similarity (\S4), so the pairing is
+      \emph{class}-level, and 34 classes weren't enough to pin down the source dataset.
+      \hl{A hypothesis with its evidence, nothing stronger.}
 \item \emph{Decisive test, which needs the source data:} encode known image/caption pairs with ViT-B/32 and
-      compare norms, gap and spectrum. I have not measured reference CLIP norms myself.
+      compare norms, gap and spectrum. I have not measured reference CLIP norms.
 \end{itemize}
 
 \B{It is not a HEPA dump.} HEPA (Petersen et al., arXiv:2605.11130) emits a $(h_t,h^*)$ pair per sample, so I
@@ -61,8 +60,8 @@ tested for that. Three checks, all of them negative:
 \begin{itemize}
 \item $D{=}512 \neq$ HEPA's $d{=}256$ (their \S3.1).
 \item No temporal structure, but HEPA's pairs index $(t,\Delta t)$ over episodes.
-\item HEPA's representations are \B{$\ell_2$-normalised onto the unit sphere} (their appendix A.2, and
-      table 7: ``L1 on L2-normalised''), whereas $\|\texttt{T}\|=9.06$, $\|\texttt{I}\|=10.19$.
+\item HEPA's representations are \B{$\ell_2$-normalised onto the unit sphere} (appendix A.2, and the Loss row
+      of appendix E: ``L1 on L2-normalised''), whereas $\|\texttt{T}\|=9.06$, $\|\texttt{I}\|=10.19$.
       \emph{I first used a SIGReg-distance test here; it does not discriminate, because HEPA applies SIGReg to
       the predictor output $\hat h$ and never to $h_t$ or $h^*$, so a genuine dump need not look isotropic.}
 \end{itemize}
@@ -86,15 +85,13 @@ tested for that. Three checks, all of them negative:
 \begin{itemize}
 \item \B{raw} is LeJEPA algorithm 1 verbatim (arXiv:2511.08544): random unit directions, \B{no centring, no
       rescaling}, Epps--Pulley with window $e^{-t^2/2}$, 17-knot trapezoid on $[-5,5]$. Only that line is the
-      regulariser; the next three strip one factor each to locate the departure
-      (\texttt{T} / \texttt{I} / $\mathcal{N}(0,I)$):
+      regulariser; the next three strip one factor each (\texttt{T} / \texttt{I} / $\mathcal{N}(0,I)$):
       \begin{itemize}
       \item raw \B{1091 / 1045 / 1.08} \;$\cdot$\; mean removed \B{860 / 781 / 0.57} \;$\cdot$\; $+$ one global
             rescale \B{29.8 / 23.9 / 0.57} \;$\cdot$\; $+$ per-projection standardised \B{5.7 / 3.7 / 0.33}.
       \end{itemize}
 \item \hl{Almost all of the departure is scale and anisotropy; the shape is already near-Gaussian.} Mean
-      projection variance 0.044 / 0.070 where SIGReg wants 1.0; projection kurtosis 3.06 / 2.95 against 3.00.
-      This drives \S5.
+      projection variance 0.044 / 0.070 where SIGReg wants 1.0; kurtosis 3.06 / 2.95 against 3.00. Drives \S5.
 \item \hl{Whitening \texttt{T} makes it worse:} shape-only 5.7$\to$11.4, kurtosis 3.06$\to$4.15, because
       whitening amplifies near-null directions into heavy tails. Whitening \texttt{I} behaves (1.04), so a
       blanket ``whiten first'' step isn't safe here.
@@ -105,22 +102,24 @@ tested for that. Three checks, all of them negative:
 \includegraphics{figs/fig3_gap.pdf}
 \begin{itemize}
 \item \emph{Protocol:} centring, rotation and ridge map are fitted on the \B{2000 training rows}; retrieval is
-      queried with the \B{500 held-out rows} against the full 2500-row gallery, so chance R@1 stays 0.04\%.
-      \emph{An earlier version fitted and scored on all 2500 rows and read $1.6\%\!\to\!17.6\%$ at instance level
-      against the $3.2\%$ below; class match moved far less (88.2\% vs 84.6\%), so the finding survives, narrowed.}
+      queried with the \B{500 held-out rows} against the full 2500-row gallery, chance R@1 0.04\%. The cloud
+      statistics and panel (a) are descriptive over all 2500 rows, nothing fitted.
+      \emph{An earlier version fitted and scored on all 2500 rows: $1.6\%\!\to\!17.6\%$ at instance level against
+      the $3.2\%$ below, class match 88.2\% vs 84.6\%. The finding survives, narrowed.}
 \item Disjoint clouds: $\cos(\overline{\texttt{T}},\overline{\texttt{I}})=0.319$,
-      $\|\overline{\texttt{T}}-\overline{\texttt{I}}\|=0.97$ (normalised). PC1 alone separates them.
-\item Raw cosine barely sees the pairing: paired 0.278, same-class 0.272, random 0.222. The 0.006 margin says the
-      correspondence is \B{class}-level.
+      $\|\overline{\texttt{T}}-\overline{\texttt{I}}\|=0.97$ (normalised); PC1 alone separates them.
+\item Raw cosine barely sees the pairing: paired 0.2781, same-class 0.2715, random 0.2215. The 0.007 margin
+      says the correspondence is \B{class}-level.
 \item \hl{The rotation transfers at class level and barely at instance level} ($\texttt{I}\!\to\!\texttt{T}$,
       held-out): class match@1 \hl{55.4\%$\to$84.6\%}, but instance R@1 only 1.6\%$\to$\hl{3.2\%}
       ($80\times$ chance), R@5 7.2\%$\to$10.8\%. Mean-centring alone gives 2.0\% / 57.2\%.
-      \hl{That split is the finding:} one orthogonal map recovers most of the class geometry across the gap and
-      almost none of the instance correspondence, which is what the class-level pairing above predicts.
+      \hl{That split is the finding}, with its null: if the map recovered class structure only and within-class
+      ranking were uninformative, R@1 would be $\approx$ class@1 $\times\,31/2500 = 1.0\%$. I measure 3.2\%, so
+      real instance signal exists, about $3\times$ that null.
 \item Zero-shot (held-out \texttt{I} classified by train-fitted class-mean \texttt{T} prototypes):
       68.4\% $\to$ \hl{89.0\%} after the same rotation; chance 3.2\%.
-\item \B{Not a pure rotation:} an unconstrained ridge map edges class match (86.0\%) and loses instance R@1
-      (2.6\%), with singular values far from flat (mean 0.22, s.d.\ 0.34).
+\item \B{Not a pure rotation:} an unconstrained ridge map edges class match (86.0\%), loses instance R@1
+      (2.6\%), and has singular values far from flat (mean 0.22, s.d.\ 0.34).
 \item Both carry class structure: linear probe 89.4 / 93.6 / 97.0\% and 1-NN 79.0 / 91.2 / 94.4\%
       (\texttt{T} / \texttt{I} / concat). \hl{The linear$-$kNN gap is $+10.4$ pts on \texttt{T} but $+2.4$ on
       \texttt{I}}, so \texttt{T}'s class information is linearly decodable while being less metrically organised.
@@ -138,18 +137,23 @@ tested for that. Three checks, all of them negative:
       \hl{37.0$\to$14.2} against a target rank of 58.9. Had I reported cosine alone it would have hidden a
       $2.6\times$ rank collapse.
 \item \hl{But rank does not predict the downstream number either.} Over that same range held-out retrieval is
-      \B{flat} (R@1 8.0, 7.8, 7.8, 8.2, 8.4, 7.8\%) and only falls to 4.2\% at $\lambda{=}10^3$. So cosine
+      \B{flat} (R@1 8.0, 7.8, 7.8, 8.2, 8.4, 7.8\%), falling to 4.2\% only at $\lambda{=}10^3$.
+      \emph{Scored against the 500-row held-out gallery, so chance is 0.2\% and these are not comparable with
+      \S4's 2500-row numbers.} So cosine
       improves monotonically while buying nothing downstream, and rank tracks the collapse but not the task.
       \B{Report all three.}
 \item \B{SIGReg on the predictor does not fix it here.} 2-layer MLP under HEPA eq.~(2),
       $\mathcal{L}=(1-\alpha)\|\hat h - h^*\|_1+\alpha\mathcal{L}_{\text{SIGReg}}$: at $\alpha{=}0$,
       cosine $0.8716{\pm}0.0004$ / rank $30.0{\pm}0.1$; at HEPA's own $\alpha{=}0.1$, cosine \hl{$0.0609{\pm}0.0044$} / rank $11.9{\pm}0.2$.
       Every $\alpha\ge0.01$ destroys prediction, with seed spread far below the effect.
-\item \B{Part of it is a scale conflict HEPA does not have.} HEPA trains ``L1 on L2-normalised'' representations
-      (table 7), so both sides sit on the unit sphere; my frozen target has mean projection variance 0.070 while
-      SIGReg wants 1.0. \B{Control:} against a whitened target (variance 1.000) that conflict is gone and
-      prediction \emph{still} collapses (cosine $0.0985{\pm}0.0004$$\to$$0.0455{\pm}0.0034$ at $\alpha{=}0.01$; rank $128.0{\pm}0.7$$\to$$11.5{\pm}0.7$).
-      So the remaining effect is about the target being \B{frozen}, not about its scale.
+\item \B{A scale mismatch is involved, but it is not what separates me from HEPA.} SIGReg wants unit
+      per-projection variance; my frozen target sits at 0.070, about $14\times$ off. HEPA's representations are
+      on the unit sphere (appendix E): at $d{=}256$ that gives $1/256=0.0039$, about $256\times$ off, so it is
+      \hl{further from SIGReg's target than mine}. Normalising is not the difference.
+      \B{Control:} against a train-whitened target (projection variance 1.00 on the fitting rows, 1.38 held-out,
+      against 0.07 raw) the mismatch is largely gone and prediction \emph{still} collapses (cosine
+      $0.109{\pm}0.000$$\to$$0.048{\pm}0.003$ at $\alpha{=}0.01$; rank $129{\pm}1$$\to$$11.4{\pm}0.6$).
+      What is left is the target being \B{frozen}.
 \item \hl{What this does and does not say about HEPA.} HEPA's target is never frozen: weight-shared and jointly
       trained (\S3.1), and \B{their appendix I.3 shows the method is robust to an EMA target instead}
       ($\tau{=}0.99$; joint wins 6/12, loses 4, ties 2, all within $\pm0.11$ h-AUROC), choosing joint training
@@ -161,14 +165,13 @@ tested for that. Three checks, all of them negative:
 
 \section{Caveats}
 \begin{itemize}
-\item \B{One 80/20 split throughout, seed 0: every fitted object in \S4 and \S5 is fitted on the 2000 training
-      rows and scored on the 500 held out.} I don't resample it, so the split is an untested source of variance.
-      MLP results are 5 seeds; the ridge sweep is exact. \S2--\S3 are descriptive statistics of all 2500 rows.
-\item The CLIP identification is unconfirmed; the test is named in \S1.
-\item The $\alpha$ sweep is one architecture at one budget (2-layer MLP, 200 epochs) on unnormalised targets.
-      I'd stand behind the \emph{direction}, that SIGReg and the prediction term conflict on a frozen target,
-      not the crossover point. I have not run HEPA itself. \B{Next:} resample the split, and find where the
-      rotation's residual 15.4\% class error concentrates.
+\item \B{One 80/20 split throughout, seed 0.} Every fitted object in \S4 and \S5 (centring, rotation, ridge
+      map, prototypes, probes, the whitening transform, the MLP) is fitted on the 2000 training rows and scored
+      on the 500 held out. I don't resample it, so the split is an untested source of variance. MLP results are
+      5 seeds; the ridge sweep is exact. \S2--\S3 describe all 2500 rows and fit nothing.
+\item The CLIP identification is unconfirmed (test named in \S1), and the $\alpha$ sweep is one architecture at
+      one budget (2-layer MLP, 200 epochs) on unnormalised targets: I'd stand behind the \emph{direction}, not
+      the crossover point, and I have not run HEPA itself.
 \end{itemize}
 
 \end{document}

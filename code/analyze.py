@@ -141,9 +141,22 @@ def proj_moments(Z, n_dir=512, seed=0):
     return (P ** 3).mean(0), (P ** 4).mean(0)
 
 def whiten(Z):
+    """Whiten using statistics from all of Z. Only for the read-only diagnostics
+    in isotropy(); anything scored on held-out rows must use whiten_fit()."""
     Zc = Z - Z.mean(0)
     U, s, Vt = np.linalg.svd(Zc, full_matrices=False)
     return (U * np.sqrt(len(Z))) @ Vt
+
+
+def whiten_fit(Ztr):
+    """Fit a whitening transform on the training rows only and return a function
+    that applies it to any rows. Used for the section-5 whitened-target control,
+    so the held-out targets are not built from their own statistics."""
+    mu = Ztr.mean(0)
+    C = np.cov(Ztr - mu, rowvar=False)
+    ev, V = np.linalg.eigh(C)
+    W = V @ np.diag(1.0 / np.sqrt(np.maximum(ev, 1e-8))) @ V.T
+    return lambda Z: (Z - mu) @ W
 
 def ridge_fit(X, Y, lam):
     A = X.T @ X + lam * np.eye(X.shape[1])
@@ -402,7 +415,8 @@ def jepa_predictor(T, I, alphas=(0.0, 0.01, 0.05, 0.1, 0.3, 0.6, 0.9), epochs=20
     print("\n[5] JEPA PREDICTOR  (2-layer MLP, L1 + SIGReg, alpha sweep)")
     tr = np.array(R["_split_tr"]); te = np.array(R["_split_te"])
     out = {}
-    for tgt_name, Itgt in (("raw", I), ("whitened", whiten(I).astype(np.float32))):
+    wf = whiten_fit(I[tr])
+    for tgt_name, Itgt in (("raw", I), ("whitened", wf(I).astype(np.float32))):
         Xtr = torch.tensor(T[tr]); Ytr = torch.tensor(Itgt[tr]); Xte = torch.tensor(T[te])
         print(f"  -- target = {tgt_name}  (mean proj. var "
               f"{np.trace(np.cov(Itgt, rowvar=False))/Itgt.shape[1]:.4f}; SIGReg wants 1.0)")

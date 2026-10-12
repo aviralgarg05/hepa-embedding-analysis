@@ -26,14 +26,18 @@ Runs in about 4 minutes on CPU. Seeded (`SEED = 0`); no sklearn. Writes:
 Then:
 
 ```bash
-./.venv/bin/python code/verify_claims.py   # 112/112 checks, exit 0
+./.venv/bin/python code/verify_claims.py   # 134/134 checks, exit 0
 tectonic -X compile report.tex   --outdir out
 tectonic -X compile proposal.tex --outdir out
 ```
 
 `code/verify_claims.py` re-checks **every headline number printed in the two PDFs** against
-`out/results.json`, and lists the HEPA/LeJEPA claims that are not auto-checkable together with the
-section where each can be verified in the source papers.
+`out/results.json` and `out/multiseed.json`, and lists the HEPA/LeJEPA claims that are not
+auto-checkable together with the section to verify each against.
+
+An adversarial pass over both documents against the source papers is what caught the errors listed
+under corrections below; two of those were introduced by an earlier round of fixes, which is why the
+numbers here are the third version and not the first.
 
 ## What the data turned out to be
 

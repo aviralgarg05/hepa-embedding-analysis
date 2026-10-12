@@ -24,12 +24,12 @@ on HEPA (Petersen et al., arXiv:2605.11130v4)}
 
 \section{The gap I want to close, stated by the paper itself}
 
-HEPA's Proposition 1 gives $I(H_t;E_{t+\Delta t}) \ge I(H^*;E_{t+\Delta t}) - C_\eta L^2 \varepsilon$,
-with vacuity threshold (their eq.~17) $\;\varepsilon_{\text{vac}} = I(H^*;E_{t+\Delta t})/(C_\eta L^2)$.
+Proposition 1: $I(H_t;E) \ge I(H^*;E) - C_\eta L^2 \varepsilon$, with vacuity threshold (eq.~17)
+$\varepsilon_{\text{vac}} = I(H^*;E)/(C_\eta L^2)$.
 
 \begin{itemize}
-\item \B{Within a dataset the bound is validated:} varying $\varepsilon$ via pretraining snapshots gives Spearman
-      $\rho = -0.87$ (C-MAPSS-1), $-0.67$ (C-MAPSS-3), $-0.64$ (MBA), $-0.49$ (SMAP).
+\item \B{Within a dataset it is validated:} varying $\varepsilon$ via pretraining snapshots gives Spearman
+      $\rho = -0.87$ / $-0.67$ / $-0.64$ / $-0.49$ on C-MAPSS-1 / C-MAPSS-3 / MBA / SMAP.
 \item \B{Across datasets it falls apart.} Pooling converged $\varepsilon$ over the 14 benchmarks gives Pearson
       \hl{$r = -0.05$ ($p=0.90$)}. The paper attributes this to $L$, $C_\eta$ and target scale differing by dataset.
 \item \B{The constants are never estimated.} In the authors' words: \emph{``The constants $L$ and $C_\eta$ are not
@@ -58,12 +58,15 @@ Define the \B{dimensionless slack}
       correlation of $\hat\rho$ with h-AUROC \emph{given} the probe's own AUROC, on disjoint rows.
       \hl{If it vanishes there, H1 is dead and I would say so.}
 \item \hl{H2 (it works as a screen).} \emph{A prediction: I have not computed $\hat\rho$ anywhere yet.}
-      $\hat\rho \ge 1$ should mark where the bound gives no guarantee, from unlabelled pretraining plus a small
-      probe. Pre-registered control: \B{CHB-MIT}, excluded at h-AUROC 0.497 with $I(H^*;E)\approx 0$
-      (appendix A.6), should land at $\hat\rho \ge 1$; C-MAPSS-1 (0.806) at $\hat\rho \ll 1$.
-      \emph{Falsified if either is misclassified.} \B{What it does not mean:} appendix A.4 says a vacuous bound
+      $\hat\rho \ge 1$ should mark where the bound gives no guarantee. Pre-registered: \B{CHB-MIT}, excluded at
+      h-AUROC 0.497 with $I(H^*;E)\approx 0$ (A.6), lands at $\hat\rho \ge 1$; C-MAPSS-1 (0.806) at
+      $\hat\rho \ll 1$.
+      \B{CHB-MIT alone is a weak test:} the paper already reports $I(H^*;E)\approx 0$ there, so $\hat\rho \ge 1$
+      is near-arithmetic. The real test is the \emph{ordering} over all 14, i.e. H1.
+      \emph{H2 falsified if either control is misclassified, or if the threshold needs per-dataset tuning.} \B{What it does not mean:} appendix A.4 says a vacuous bound
       does not imply $I(H_t;E)=0$, and GECCO proves it: within-dataset $\rho=+0.14$ ($p=0.67$), yet HEPA
-      scores \B{0.88} there, its best in table 1. The screen is about the \emph{guarantee}, not about failure.
+      scores \B{0.88} there, among its strongest table-1 results. The screen is about the \emph{guarantee}, never
+      a prediction that HEPA will fail.
 \item \hl{H3 (the L1/L2 gap costs more than monotonicity).} A2 is in L2 while eq.~(2) trains L1.
       \B{Appendix A.2 already answers this} via $\|u\|_2\le\|u\|_1$, calling L1 a ``monotone proxy for
       $\varepsilon$'', which is enough for the within-dataset test in fig.~3 but not here, since $\hat\rho \ge 1$
@@ -77,56 +80,49 @@ Define the \B{dimensionless slack}
 Fit HEPA's own event head $\hat\eta(h)=\sigma(w^\top \mathrm{LN}(h) + b)$ (LayerNorm $+$ linear, 769 params on
 $d{=}256$, their appendix C) on the \emph{frozen} target representations $h^*$. Then, on held-out data:
 \begin{itemize}
-\item $\hat L = \|w\|_2/4$. For this head the Lipschitz constant is \B{exact, not estimated}:
-      $\nabla_h \hat\eta = \sigma'(z)\,w$ and $\sigma' \le 1/4$. A kNN finite-difference quantile is then only a
-      sanity check on the bound's tightness, not the estimator.
+\item $\hat L = \|\gamma \odot w\|_2/(4\hat s_{\min})$, with $\gamma$ the LayerNorm gain and $\hat s_{\min}$
+      the smallest held-out $\sqrt{\mathrm{Var}(h^*)+\epsilon}$. \B{The LayerNorm Jacobian is easy to drop and
+      costly to drop:} $\nabla_h\hat\eta = \sigma'(z)s^{-1}P(\gamma\odot w)$, so $\|w\|_2/4$ is neither exact nor
+      an upper bound. On the unit sphere at $d{=}256$, $s\approx 1/16$, so omitting it understates $L$ by
+      ${\sim}16\times$ and $\hat\rho$ by ${\sim}250\times$, toward calling a vacuous bound non-vacuous.
 \item $\hat C_\eta = \big(2\,\underline{\eta}\,(1-\overline{\eta})\big)^{-1}$ with $\underline{\eta},\overline{\eta}$
       the 1st/99th percentiles of $\hat\eta(h^*)$.
-\item $\hat I(H^*;E) = H(\pi_e) - \mathbb{E}\big[H(\hat\eta(H^*))\big]$, plug-in. $E$ is binary, so this is a
-      \B{1-D} estimate. No high-dimensional MI estimator is needed, which is usually where this kind of proposal
-      dies.
+\item $\hat I(H^*;E) = H(\pi_e) - \mathbb{E}\big[H(\hat\eta(H^*))\big]$, plug-in. $E$ is binary, so the entropy
+      is 1-D and no high-dimensional MI estimator is needed. \B{The difficulty moves rather than vanishes:} this
+      is a lower bound on $I$ only as far as $\hat\eta$ fits the true posterior, so I would report it against a
+      higher-capacity $\hat\eta$ as a sensitivity check.
 \item $\hat\varepsilon = \mathbb{E}\|\hat h - h^*\|_2^2$ on a held-out split, and in L1 as well, per H3.
 \end{itemize}
 
-\section{Why it is worth doing, and what it costs}
+\section{Why it is worth doing, what it costs, and where it can fail}
 
 \begin{itemize}
-\item \B{Scientific:} it makes HEPA's central theorem computable and falsifiable, answering the open problem
-      the paper names itself.
-\item \B{Industrial:} $\hat\rho$ needs unlabelled pretraining and a small probe, so you can tell before
-      committing whether the guarantee holds on a new plant.
-\item \B{Cost:} the public repo ships data-download and training scripts, so this is a re-run of HEPA's recipe,
-      not a new model. Pretraining is under a minute per dataset on one A10G; the estimators are $O(N)$.
-\end{itemize}
-
-\section{Risks I can already name}
-
-\begin{itemize}
-\item Plug-in MI biases $\hat I$ down, pushing $\hat\rho$ \emph{up} toward the threshold. Rank correlation
-      protects H1; \B{H2 cannot hide behind that}, being an absolute test at $\hat\rho=1$, so I would calibrate
-      the threshold on held-out folds and report the bias direction with every call.
-\item $n=14$ datasets is low power. Pre-register the direction and the test before computing any correlation,
-      and show the per-dataset scatter, not just the coefficient.
+\item Makes HEPA's central theorem computable and falsifiable, answering the paper's own open problem; and
+      $\hat\rho$ needs only unlabelled pretraining plus a small probe, so the guarantee can be checked on a new
+      plant before committing. \B{Cost:} a re-run of HEPA's own recipe (under a minute per dataset on one A10G)
+      plus $O(N)$ estimators, no new model.
+\item \B{Risks.} Plug-in MI biases $\hat I$ down, pushing $\hat\rho$ \emph{up} toward the threshold; rank
+      correlation protects H1 but \B{H2 cannot hide behind that}, so I would calibrate the threshold on held-out
+      folds. And $n{=}14$ is low power: pre-register direction and test, and show the per-dataset scatter.
 \end{itemize}
 
 \section{Secondary direction (from my analysis of \texttt{embeddings.npz})}
 
 In the attached report, with a \B{frozen} target no SIGReg weight $\alpha\in[0.01,0.9]$ bought both prediction
-quality and representation rank (at $\alpha{=}0.1$: cosine $0.8716{\pm}0.0004$$\to$$0.0609{\pm}0.0044$, 5 seeds).
-HEPA does not hit this: its target is never frozen (weight-shared by default, and robust to an EMA target per
-\B{appendix I.3}, which chooses joint training ``for its simplicity''), so it stays free to migrate toward the
-isotropic Gaussian SIGReg wants. The frozen-target regime sits outside both settings I.3 tests.
-\hl{SIGReg is doing two jobs at once: preventing collapse, and setting the target's distribution.}
+quality and representation rank (at $\alpha{=}0.1$: cosine $0.8716{\pm}0.0004$$\to$$0.0609{\pm}0.0044$, 5 seeds). HEPA's target is never
+frozen: weight-shared, and robust to EMA per \B{appendix I.3}, which picks joint training ``for its simplicity'',
+so it can move toward what SIGReg wants. That regime sits outside both settings I.3 tests.
+\hl{SIGReg is doing two jobs: preventing collapse, and setting the target's distribution.}
 
 \begin{itemize}
 \item \B{H4.} Split the jobs: SIGReg on the target branch, an explicit rank floor on the predictor output.
-      Prediction: h-AUROC goes \B{flat in $\alpha$} over $[0.03,0.3]$ (range $\le 0.02$), with predictor-output
-      effective rank as the mediator. \emph{Falsified if h-AUROC still varies by more than 0.02 there, or if the
-      rank floor binds without moving h-AUROC.} This is \B{not} a claim about the BATADAL/MBA gap, which the
-      paper attributes to tokenisation and scopes separately.
+      Prediction: h-AUROC goes \B{flat in $\alpha$} over $[0.03,0.3]$ (range $\le 0.02$), mediated by
+      predictor-output effective rank. \emph{Falsified if h-AUROC still varies by more than 0.02, or if the rank
+      floor binds without moving it.} \B{Not} a claim about the BATADAL/MBA gap, which the paper scopes to
+      tokenisation.
 \end{itemize}
 
 {\footnotesize\emph{Worth confirming:} the paper reports $\alpha{=}0.1$ (table 7) while
-\texttt{Forgis-Labs/HEPA} PR \#3 says the table-1 runs used $0.04$. I've worked from 0.1.}
+\texttt{Forgis-Labs/HEPA} PR \#3 says the table-1 runs used 0.04. I've worked from 0.1.}
 
 \end{document}

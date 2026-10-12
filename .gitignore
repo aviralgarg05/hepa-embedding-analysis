@@ -14,3 +14,6 @@ out/_cache.pkl
 
 # the input data is not mine to redistribute
 embeddings.npz
+
+# source papers, kept locally for checking quotations; not mine to redistribute
+refs/

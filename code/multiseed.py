@@ -15,7 +15,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyze import (nz, retrieval, var_entropy_rank, rankme, sigreg,
-                     sigreg_torch, whiten)
+                     sigreg_torch, whiten_fit)
 
 ALPHAS = (0.0, 0.01, 0.05, 0.1, 0.3, 0.6, 0.9)
 SEEDS = (0, 1, 2, 3, 4)
@@ -66,7 +66,8 @@ def main():
 
     out, total = {}, len(ALPHAS) * len(SEEDS) * 2
     done = 0
-    for tname, Itgt in (("raw", I), ("whitened", whiten(I).astype(np.float32))):
+    wf = whiten_fit(I[tr])
+    for tname, Itgt in (("raw", I), ("whitened", wf(I).astype(np.float32))):
         for alpha in ALPHAS:
             runs = [run_one(T, Itgt, tr, te, alpha, s) for s in SEEDS]
             done += len(SEEDS)

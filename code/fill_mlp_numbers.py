@@ -27,9 +27,9 @@ SUBS = {
     "MSCOS1": fmt("raw|0.1", "cos", 4),
     "MSR1":   fmt("raw|0.1", "rank", 1),
     # report §5, whitened-target control
-    "MSWC0":  fmt("whitened|0.0", "cos", 4),
-    "MSWC1":  fmt("whitened|0.01", "cos", 4),
-    "MSWR0":  fmt("whitened|0.0", "rank", 1),
+    "MSWC0":  fmt("whitened|0.0", "cos", 3),
+    "MSWC1":  fmt("whitened|0.01", "cos", 3),
+    "MSWR0":  fmt("whitened|0.0", "rank", 0),
     "MSWR1":  fmt("whitened|0.01", "rank", 1),
     # proposal, secondary direction
     "PCOS0":  fmt("raw|0.0", "cos", 4),
